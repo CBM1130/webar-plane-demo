@@ -14,14 +14,33 @@
       font-family:sans-serif; z-index:1;
     }
   </style>
+
+  <!-- 1) importmap으로 모듈 경로 매핑 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="info">“AR 시작” 버튼을 눌러 평면 위에 배치하세요</div>
 
+  <!-- 2) 모듈 스크립트 -->
   <script type="module">
-    import * as THREE        from 'https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js';
-    import { GLTFLoader }    from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/loaders/GLTFLoader.js';
-    import { ARButton }      from 'https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/webxr/ARButton.js';
+    import * as THREE       from 'three';
+    import { GLTFLoader }   from 'three/addons/loaders/GLTFLoader.js';
+    import { ARButton }     from 'three/addons/webxr/ARButton.js';
+
+    // 디버그: WebXR 지원 여부 바로 확인
+    console.log('navigator.xr:', navigator.xr);
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar')
+        .then(s => console.log('immersive-ar 지원 여부:', s))
+        .catch(err => console.error('isSessionSupported 에러', err));
+    }
 
     let camera, scene, renderer, reticle, model, hitTestSource;
 
@@ -31,84 +50,81 @@
     async function init() {
       const info = document.getElementById('info');
 
-      // — Scene & Camera —
       scene  = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 20);
-
-      // — Renderer —
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.01, 20);
+      renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      renderer.setSize(innerWidth, innerHeight);
       renderer.xr.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      // — WebXR 지원 체크 —
+      // WebXR AR 지원 체크
       if (!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-ar'))) {
-        info.textContent = '이 기기는 WebXR AR을 지원하지 않습니다.';
+        info.textContent = '죄송합니다. 이 기기는 WebXR AR을 지원하지 않습니다.';
         return;
       }
 
-      // — ARButton 추가 —
+      // AR 시작 버튼
       document.body.appendChild(
-        ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] })
+        ARButton.createButton(renderer, { requiredFeatures:['hit-test'] })
       );
       info.style.display = 'none';
 
-      // — Light —
+      // 조명
       scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1));
 
-      // — Reticle (평면 위치 표시) —
+      // Reticle
       {
         const geo = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI/2);
-        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const mat = new THREE.MeshBasicMaterial({ color:0x00ff00 });
         reticle = new THREE.Mesh(geo, mat);
         reticle.matrixAutoUpdate = false;
         reticle.visible = false;
         scene.add(reticle);
       }
 
-      // — 3D 모델 로드 (초기 숨김) —
+      // 모델 로드
       try {
         const gltf = await new GLTFLoader().loadAsync('./model/table_set.glb');
         model = gltf.scene;
         model.visible = false;
         model.scale.set(0.3, 0.3, 0.3);
         scene.add(model);
-      } catch (e) {
+      } catch(e) {
         console.error('모델 로드 실패', e);
         info.style.display = 'block';
-        info.textContent = '3D 모델 불러오기에 실패했습니다.';
+        info.textContent = '3D 모델을 불러오지 못했습니다.';
       }
 
-      // — 화면 터치(select) 시 모델 배치 —
-      const controller = renderer.xr.getController(0);
-      controller.addEventListener('select', () => {
+      // 터치(Select) 이벤트
+      const ctrl = renderer.xr.getController(0);
+      ctrl.addEventListener('select', () => {
         if (reticle.visible && model) {
           model.position.setFromMatrixPosition(reticle.matrix);
           model.quaternion.setFromRotationMatrix(reticle.matrix);
           model.visible = true;
         }
       });
-      scene.add(controller);
+      scene.add(ctrl);
 
       window.addEventListener('resize', onWindowResize);
     }
 
     function onWindowResize() {
-      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(innerWidth, innerHeight);
     }
 
     function animate() {
       renderer.setAnimationLoop(render);
     }
 
-    function render(timestamp, frame) {
+    function render(time, frame) {
       if (frame && !hitTestSource) {
-        const session = renderer.xr.getSession();
-        session.requestReferenceSpace('viewer')
-          .then(space => session.requestHitTestSource({ space }))
-          .then(source => hitTestSource = source)
+        const sess = renderer.xr.getSession();
+        sess.requestReferenceSpace('viewer')
+          .then(ref => sess.requestHitTestSource({ space: ref }))
+          .then(src => hitTestSource = src)
           .catch(console.error);
       }
       if (frame && hitTestSource) {
@@ -118,7 +134,9 @@
           const pose = hits[0].getPose(ref);
           reticle.visible = true;
           reticle.matrix.fromArray(pose.transform.matrix);
-        } else reticle.visible = false;
+        } else {
+          reticle.visible = false;
+        }
       }
       renderer.render(scene, camera);
     }
