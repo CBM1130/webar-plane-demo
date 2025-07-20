@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ar데모 테스트</title>
+  <title>WebXR Plane-Tracking AR Demo</title>
   <style>
     body { margin:0; overflow:hidden; }
     #info {
@@ -86,7 +86,7 @@
         const gltf = await new GLTFLoader().loadAsync(`./model/${modelFile}`);
         model = gltf.scene;
         model.visible = false;
-        model.scale.set(5, 5, 5);
+        model.scale.set(0.3, 0.3, 0.3);
         scene.add(model);
       } catch(e) {
         console.error('모델 로드 실패', e);
